@@ -1,0 +1,23 @@
+services:
+  cotichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cotichi-service
+    restart: unless-stopped
+    environment:
+      - CAT_API_URL=http://algisothal.ru:8889
+      - CAT_API_DEBUG_URL=http://algisothal.ru:8890
+      - NUM_WORKERS=12
+      - TARGET_COUNT=12
+      - LOG_LEVEL=INFO
+      - UPLOAD_ENABLED=true
+      - SAVE_LOCAL=false
+    volumes:
+      - ./output:/app/output
+    networks:
+      - cotichi-network
+
+networks:
+  cotichi-network:
+    driver: bridge

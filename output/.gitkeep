@@ -1,0 +1,2 @@
+# Output directory for ZIP archives
+# This directory is mounted as a volume in Docker

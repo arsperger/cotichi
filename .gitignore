@@ -1,0 +1,20 @@
+# Output
+output/*.zip
+output/*.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lua
+*.luac
+luarocks/
+
+docs/*.md
+docs/*.txt
