@@ -1,9 +1,5 @@
 --[[
     Configuration Module
-    Use:
-        local config = require("config")
-        print(config.cat_api.base_url)
-        print(config:get_cat_url())
 ]]
 
 local config = {
@@ -17,7 +13,6 @@ local config = {
 
     upload = {
         enabled = os.getenv("UPLOAD_ENABLED") ~= "false",
-        endpoint = os.getenv("UPLOAD_ENDPOINT") or "/cat"
     },
 
     async = {
@@ -57,23 +52,16 @@ function config:get_base_url()
     return self.cat_api.base_url
 end
 
---- Get URL for fetching cats
--- @return string Full cat fetch URL
-function config:get_cat_url()
+--- Get full API URL (fetch and upload use the same endpoint)
+-- @return string Full API URL
+function config:get_api_url()
     return self:get_base_url() .. self.cat_api.endpoint
-end
-
---- Get URL for uploading archives
--- @return string Full upload URL
-function config:get_upload_url()
-    return self:get_base_url() .. self.upload.endpoint
 end
 
 
 function config:dump()
     print("=== Configuration ===")
-    print("Cat API URL: " .. self:get_cat_url())
-    print("Upload URL: " .. self:get_upload_url())
+    print("API URL: " .. self:get_api_url())
     print("Use Debug API: " .. tostring(self.cat_api.use_debug))
     print("Num Workers: " .. self.async.num_workers)
     print("Target Count: " .. self.archive.target_count)

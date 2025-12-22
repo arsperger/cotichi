@@ -148,6 +148,7 @@ local function run_service()
     local http_client = HttpClient.new(
         config:get_base_url(),
         {
+            endpoint = config.cat_api.endpoint,
             timeout = config.async.timeout,
             retry_count = config.async.retry_count,
             retry_delay = config.async.retry_delay
@@ -169,7 +170,7 @@ local function run_service()
     local num_workers = config.async.num_workers
 
     log:info("Configuration:")
-    log:info("  API URL: %s", config:get_cat_url())
+    log:info("  API URL: %s", config:get_api_url())
     log:info("  Target count: %d cats per archive", target_count)
     log:info("  Workers: %d (max concurrent connections)", num_workers)
 

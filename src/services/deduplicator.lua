@@ -7,8 +7,10 @@
         local Deduplicator = require("services.deduplicator")
         local dedup = Deduplicator.new()
 
-        if not dedup:is_duplicate(image_data) then
-            dedup:add_image(image_data)
+        if dedup:try_add(image_data) then
+            -- unique, added
+        else
+            -- duplicate, skipped
         end
 
         -- After:
@@ -36,30 +38,6 @@ function Deduplicator:compute_hash(image_data)
         return nil
     end
     return hash.md5(image_data)
-end
-
---- Check
--- @param image_data string
--- @return boolean true if duplicate
-function Deduplicator:is_duplicate(image_data)
-    local img_hash = self:compute_hash(image_data)
-    if img_hash == nil then
-        return false
-    end
-    return self.seen_hashes[img_hash] ~= nil
-end
-
---- Add to seen
--- @param image_data string
--- @return string Hash
-function Deduplicator:add_image(image_data)
-    local img_hash = self:compute_hash(image_data)
-    if img_hash == nil then
-        return nil
-    end
-    self.seen_hashes[img_hash] = true
-    self.count = self.count + 1
-    return img_hash
 end
 
 --- Check and add

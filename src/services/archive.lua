@@ -2,11 +2,6 @@
     Archive Builder Module
 
     ZIP for Cats
-
-    Use:
-        local ArchiveBuilder = require("services.archive")
-        local builder = ArchiveBuilder.new({ filename_pattern = "cat_%02d.jpg" })
-        local zip_data = builder:build_zip(images)
 ]]
 
 local zip = require("brimworks.zip")
@@ -101,20 +96,6 @@ function ArchiveBuilder:save_zip(images, output_path)
     archive:close()
 
     return output_path
-end
-
---- Get number of files cound
--- @param images table
--- @return number
-function ArchiveBuilder:get_file_count(images)
-    return images and #images or 0
-end
-
---- generate filename by index
--- @param index number
--- @return string file name
-function ArchiveBuilder:get_filename(index)
-    return string.format(self.filename_pattern, index)
 end
 
 return ArchiveBuilder

@@ -41,19 +41,19 @@ else
 end
 print("")
 
--- Test 3: Add unique images
-print("[TEST 3] Adding unique images")
+-- Test 3: Add unique images with try_add
+print("[TEST 3] Adding unique images with try_add")
 local img1 = "image data 1"
 local img2 = "image data 2"
 local img3 = "image data 3"
 
-dedup:add_image(img1)
-dedup:add_image(img2)
-dedup:add_image(img3)
+local added_img1 = dedup:try_add(img1)
+local added_img2 = dedup:try_add(img2)
+local added_img3 = dedup:try_add(img3)
 
 print("  Added 3 images")
 print("  count: " .. dedup:get_count())
-if dedup:get_count() == 3 then
+if dedup:get_count() == 3 and added_img1 and added_img2 and added_img3 then
     print("  PASSED")
 else
     print("  FAILED (expected 3)")
@@ -61,15 +61,15 @@ else
 end
 print("")
 
--- Test 4: Detect duplicates
-print("[TEST 4] Detecting duplicates")
-local is_dup1 = dedup:is_duplicate(img1)
-local is_dup_new = dedup:is_duplicate("new image data")
+-- Test 4: Detect duplicates via try_add
+print("[TEST 4] Detecting duplicates via try_add")
+local is_dup1 = dedup:try_add(img1)  -- should be false (already added)
+local is_new = dedup:try_add("new image data")  -- should be true
 
-print("  is_duplicate(img1): " .. tostring(is_dup1))
-print("  is_duplicate(new): " .. tostring(is_dup_new))
+print("  try_add(img1): " .. tostring(is_dup1) .. " (expected false - duplicate)")
+print("  try_add(new): " .. tostring(is_new) .. " (expected true - new)")
 
-if is_dup1 == true and is_dup_new == false then
+if is_dup1 == false and is_new == true then
     print("  PASSED")
 else
     print("  FAILED")
@@ -101,10 +101,10 @@ print("")
 print("[TEST 6] Reset")
 dedup:reset()
 print("  After reset, count: " .. dedup:get_count())
-local is_dup_after_reset = dedup:is_duplicate(img1)
-print("  is_duplicate(img1) after reset: " .. tostring(is_dup_after_reset))
+local can_add_after_reset = dedup:try_add(img1)  -- should work after reset
+print("  try_add(img1) after reset: " .. tostring(can_add_after_reset))
 
-if dedup:get_count() == 0 and is_dup_after_reset == false then
+if dedup:get_count() == 1 and can_add_after_reset == true then
     print("  PASSED")
 else
     print("  FAILED")
@@ -141,15 +141,15 @@ print("[TEST 8] Handle nil/empty data")
 local dedup4 = Deduplicator.new()
 local hash_nil = dedup4:compute_hash(nil)
 local hash_empty = dedup4:compute_hash("")
-local is_dup_nil = dedup4:is_duplicate(nil)
 local added_nil = dedup4:try_add(nil)
+local added_empty = dedup4:try_add("")
 
 print("  compute_hash(nil): " .. tostring(hash_nil))
 print("  compute_hash(''): " .. tostring(hash_empty))
-print("  is_duplicate(nil): " .. tostring(is_dup_nil))
 print("  try_add(nil): " .. tostring(added_nil))
+print("  try_add(''): " .. tostring(added_empty))
 
-if hash_nil == nil and is_dup_nil == false and added_nil == false then
+if hash_nil == nil and added_nil == false and added_empty == false then
     print("  PASSED")
 else
     print("  FAILED")

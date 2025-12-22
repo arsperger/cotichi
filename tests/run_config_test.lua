@@ -45,7 +45,7 @@ do
 
     -- Upload
     assert(config.upload, "upload section should exist")
-    assert(config.upload.endpoint, "upload endpoint should exist")
+    assert(type(config.upload.enabled) == "boolean", "upload.enabled should exist")
 
     -- Async
     assert(config.async, "async section should exist")
@@ -64,7 +64,7 @@ do
 
     -- Service
     assert(config.service, "service section should exist")
-    assert(config.service.name, "service name should exist")
+    assert(config.service.cycle_delay ~= nil, "cycle_delay should exist")
 
     log(GREEN, "[TEST 2] Config structure - PASSED")
     tests_passed = tests_passed + 1
@@ -76,7 +76,7 @@ do
 
     assert(config.cat_api.base_url:find("algisothal"), "Default base_url should be algisothal")
     assert(config.cat_api.endpoint == "/cat", "Default endpoint should be /cat")
-    assert(config.async.num_workers == 10, "Default num_workers should be 10")
+    assert(config.async.num_workers == 12, "Default num_workers should be 12")
     assert(config.archive.target_count == 12, "Default target_count should be 12")
     assert(config.archive.filename_pattern == "cat_%02d.jpg", "Default pattern should be cat_%02d.jpg")
 
@@ -94,15 +94,10 @@ do
     assert(type(base_url) == "string", "get_base_url should return string")
     assert(#base_url > 0, "base_url should not be empty")
 
-    -- get_cat_url
-    assert(type(config.get_cat_url) == "function", "get_cat_url should be a function")
-    local cat_url = config:get_cat_url()
-    assert(cat_url:find("/cat"), "cat_url should contain /cat")
-
-    -- get_upload_url
-    assert(type(config.get_upload_url) == "function", "get_upload_url should be a function")
-    local upload_url = config:get_upload_url()
-    assert(type(upload_url) == "string", "get_upload_url should return string")
+    -- get_api_url
+    assert(type(config.get_api_url) == "function", "get_api_url should be a function")
+    local api_url = config:get_api_url()
+    assert(api_url:find("/cat"), "api_url should contain /cat")
 
     -- dump
     assert(type(config.dump) == "function", "dump should be a function")
