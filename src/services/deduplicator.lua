@@ -2,19 +2,6 @@
     Deduplicator Module
 
     Check Dedup with MD5
-
-    Use:
-        local Deduplicator = require("services.deduplicator")
-        local dedup = Deduplicator.new()
-
-        if dedup:try_add(image_data) then
-            -- unique, added
-        else
-            -- duplicate, skipped
-        end
-
-        -- After:
-        dedup:reset()
 ]]
 
 local hash = require("utils.hash")
@@ -43,17 +30,18 @@ end
 --- Check and add
 -- @param image_data string
 -- @return boolean true if unique and added
+-- @return string|nil MD5 hash of image (returned even for duplicates)
 function Deduplicator:try_add(image_data)
     local img_hash = self:compute_hash(image_data)
     if img_hash == nil then
-        return false
+        return false, nil
     end
     if self.seen_hashes[img_hash] then
-        return false
+        return false, img_hash
     end
     self.seen_hashes[img_hash] = true
     self.count = self.count + 1
-    return true
+    return true, img_hash
 end
 
 function Deduplicator:reset()

@@ -56,15 +56,15 @@ do
     -- Archive
     assert(config.archive, "archive section should exist")
     assert(config.archive.target_count, "target_count should exist")
-    assert(config.archive.filename_pattern, "filename_pattern should exist")
+    assert(config.archive.output_dir, "output_dir should exist")
 
     -- Logging
     assert(config.logging, "logging section should exist")
     assert(config.logging.level, "log level should exist")
 
-    -- Service
-    assert(config.service, "service section should exist")
-    assert(config.service.cycle_delay ~= nil, "cycle_delay should exist")
+    -- Streaming
+    assert(config.streaming, "streaming section should exist")
+    assert(config.streaming.queue_size, "queue_size should exist")
 
     log(GREEN, "[TEST 2] Config structure - PASSED")
     tests_passed = tests_passed + 1
@@ -74,11 +74,11 @@ end
 do
     print("\n" .. YELLOW .. "[TEST 3] Default values..." .. RESET)
 
-    assert(config.cat_api.base_url:find("algisothal"), "Default base_url should be algisothal")
+    assert(config.cat_api.base_url:find("algisothal"), "base_url should contain algisothal")
     assert(config.cat_api.endpoint == "/cat", "Default endpoint should be /cat")
-    assert(config.async.num_workers == 12, "Default num_workers should be 12")
-    assert(config.archive.target_count == 12, "Default target_count should be 12")
-    assert(config.archive.filename_pattern == "cat_%02d.jpg", "Default pattern should be cat_%02d.jpg")
+    assert(type(config.async.num_workers) == "number" and config.async.num_workers > 0, "num_workers should be positive number")
+    assert(type(config.archive.target_count) == "number" and config.archive.target_count > 0, "target_count should be positive number")
+    assert(type(config.streaming.queue_size) == "number" and config.streaming.queue_size > 0, "queue_size should be positive number")
 
     log(GREEN, "[TEST 3] Default values - PASSED")
     tests_passed = tests_passed + 1

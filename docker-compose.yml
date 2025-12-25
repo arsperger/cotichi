@@ -5,12 +5,14 @@ services:
       dockerfile: Dockerfile
     container_name: cotichi-service
     restart: unless-stopped
+    init: false
     environment:
       - CAT_API_URL=http://algisothal.ru:8889
       - CAT_API_DEBUG_URL=http://algisothal.ru:8890
       - NUM_WORKERS=12
       - TARGET_COUNT=12
-      - LOG_LEVEL=INFO
+      - QUEUE_SIZE=20
+      - LOG_LEVEL=DEBUG
       - UPLOAD_ENABLED=true
       - SAVE_LOCAL=false
     volumes:

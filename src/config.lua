@@ -16,30 +16,25 @@ local config = {
     },
 
     async = {
-        num_workers = tonumber(os.getenv("NUM_WORKERS")) or 12,
+        num_workers = tonumber(os.getenv("NUM_WORKERS")) or 24,
         timeout = tonumber(os.getenv("TIMEOUT")) or 20,
-        fetch_timeout = tonumber(os.getenv("FETCH_TIMEOUT")) or 60,
         retry_count = tonumber(os.getenv("RETRY_COUNT")) or 3,
         retry_delay = tonumber(os.getenv("RETRY_DELAY")) or 1
     },
 
     archive = {
         target_count = tonumber(os.getenv("TARGET_COUNT")) or 12,
-        filename_pattern = os.getenv("FILENAME_PATTERN") or "cat_%02d.jpg",
         output_dir = os.getenv("OUTPUT_DIR") or "/app/output",
         save_local = os.getenv("SAVE_LOCAL") == "true" or os.getenv("SAVE_LOCAL") == "1"
     },
 
     logging = {
         level = os.getenv("LOG_LEVEL") or "INFO",  -- DEBUG, INFO, WARN, ERROR
-        -- timestamps = os.getenv("LOG_TIMESTAMPS") ~= "false",
-        -- colors = os.getenv("LOG_COLORS") ~= "false"
     },
 
-    service = {
-        name = os.getenv("SERVICE_NAME") or "cotichi",
-        -- Delay between archive cycles (seconds, 0 = no delay)
-        cycle_delay = tonumber(os.getenv("CYCLE_DELAY")) or 0
+    streaming = {
+        -- Optimal: ~2x target_count for buffering
+        queue_size = tonumber(os.getenv("QUEUE_SIZE")) or 25
     }
 }
 
@@ -65,6 +60,7 @@ function config:dump()
     print("Use Debug API: " .. tostring(self.cat_api.use_debug))
     print("Num Workers: " .. self.async.num_workers)
     print("Target Count: " .. self.archive.target_count)
+    print("Queue Size: " .. self.streaming.queue_size)
     print("Log Level: " .. self.logging.level)
     print("=====================")
 end

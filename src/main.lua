@@ -13,9 +13,9 @@ local copas = require("copas")
 local config = require("config")
 local Logger = require("utils.logger")
 local HttpClient = require("client.http_client")
-local Deduplicator = require("services.deduplicator")
-local Fetcher = require("services.fetcher")
-local ArchiveBuilder = require("services.archive")
+local ImageQueue = require("services.image_queue")
+local StreamingFetcher = require("services.streaming_fetcher")
+local BatchingConsumer = require("services.batching_consumer")
 
 local shutdown_requested = false
 local current_archive_num = 0
@@ -38,7 +38,6 @@ local COLORS = {
     GREEN = "\27[32m",
     YELLOW = "\27[33m",
     CYAN = "\27[36m",
-    MAGENTA = "\27[35m",
     BOLD = "\27[1m"
 }
 
@@ -90,7 +89,8 @@ local function save_stats_to_file()
     local secs = uptime % 60
 
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
-    local filename = config.archive.output_dir .. "/stats_" .. os.date("%Y%m%d_%H%M%S") .. ".txt"
+    -- Use fixed filename so it gets overwritten each time
+    local filename = config.archive.output_dir .. "/stats.txt"
 
     local content = string.format([[
 === Cotichi Service Statistics ===
@@ -140,10 +140,10 @@ end
 
 local MIN_CATS_FOR_ARCHIVE = 1
 
---- main service cycle
-local function run_service()
+--- Continuous streaming pipeline (workers + batching consumer)
+local function run_service_streaming()
 
-    log:info("Initializing components...")
+    log:info("Initializing continuous streaming pipeline...")
 
     local http_client = HttpClient.new(
         config:get_base_url(),
@@ -155,157 +155,104 @@ local function run_service()
         }
     )
 
-    local deduplicator = Deduplicator.new()
-
-    local fetcher = Fetcher.new({
-        http_client = http_client,
-        deduplicator = deduplicator
-    })
-
-    local archive_builder = ArchiveBuilder.new({
-        filename_pattern = config.archive.filename_pattern
-    })
-
     local target_count = config.archive.target_count
     local num_workers = config.async.num_workers
 
-    log:info("Configuration:")
+    log:info("Streaming Configuration:")
     log:info("  API URL: %s", config:get_api_url())
-    log:info("  Target count: %d cats per archive", target_count)
-    log:info("  Workers: %d (max concurrent connections)", num_workers)
+    log:info("  Batch size: %d cats per archive", target_count)
+    log:info("  Workers: %d (continuous fetching)", num_workers)
+    log:info("  Queue size: %d", config.streaming.queue_size)
 
-    print("\n" .. COLORS.YELLOW .. "Starting infinite loop... Press Ctrl+C to stop" .. COLORS.RESET .. "\n")
+    print("\n" .. COLORS.YELLOW .. "Starting continuous streaming... Press Ctrl+C to stop" .. COLORS.RESET .. "\n")
 
-    -- forever
-    while not shutdown_requested do
+    -- Create shared queue
+    local queue = ImageQueue.new(config.streaming.queue_size)
 
-        current_archive_num = current_archive_num + 1
-        local start_time = os.clock()
+    -- Create fetcher (workers)
+    local fetcher = StreamingFetcher.new(http_client, {
+        num_workers = num_workers,
+        logger = log
+    })
 
-        log:info("=== Starting archive #%d ===", current_archive_num)
+    -- Create batching consumer (handles archive creation, upload, cycling)
+    local consumer = BatchingConsumer.new(queue, http_client, {
+        batch_size = target_count,
+        output_dir = config.archive.output_dir,
+        save_local = config.archive.save_local,
+        upload_enabled = config.upload.enabled,
+        logger = log,
+        on_batch_complete = function(archive_num, batch_stats)
+            -- Update global stats
+            stats.total_archives = stats.total_archives + 1
+            stats.total_cats = stats.total_cats + batch_stats.cats
 
-        deduplicator:reset()
+            -- Reset deduplicator for next archive (allow duplicates between archives)
+            fetcher:reset_deduplicator()
 
-        log:debug("Fetching %d unique cats with %d workers (timeout: %ds)...",
-                  target_count, num_workers, config.async.fetch_timeout)
+            -- Print progress
+            print_stats(archive_num, batch_stats.cats, 0, batch_stats.bytes)
 
-        local fetch_ok, images_or_err, fetch_err = pcall(function()
-            return fetcher:fetch_unique(target_count, num_workers, config.async.fetch_timeout)
-        end)
+            -- Save stats after every archive (in case of crash/kill)
+            save_stats_to_file()
 
-        local images
-        if not fetch_ok then
-            log:error("Fetch crashed: %s", tostring(images_or_err))
-            stats.fetch_errors = stats.fetch_errors + 1
-            stats.total_errors = stats.total_errors + 1
-            copas.sleep(5)
-            goto continue
-        end
-
-        images = images_or_err
-
-        if not images or #images < MIN_CATS_FOR_ARCHIVE then
-            log:error("Failed to fetch enough cats: got %d, need %d",
-                      images and #images or 0, MIN_CATS_FOR_ARCHIVE)
-            stats.fetch_errors = stats.fetch_errors + 1
-            stats.total_errors = stats.total_errors + 1
-            copas.sleep(5)
-            goto continue
-        end
-
-        -- Graceful degradation: got less than target_count
-        if #images < target_count then
-            log:warn("Partial fetch: got %d/%d cats (graceful degradation)", #images, target_count)
-            stats.partial_archives = stats.partial_archives + 1
-        end
-
-        log:info("Fetched %d unique cats", #images)
-        stats.total_cats = stats.total_cats + #images
-
-        -- stopped?
-        if shutdown_requested then
-            log:info("Shutdown requested, skipping archive creation")
-            break
-        end
-
-        log:debug("Building ZIP archive...")
-        local zip_ok, zip_data_or_err, zip_err = pcall(function()
-            return archive_builder:build_zip(images)
-        end)
-
-        local zip_data
-        if not zip_ok then
-            log:error("ZIP creation crashed: %s", tostring(zip_data_or_err))
-            stats.zip_errors = stats.zip_errors + 1
-            stats.total_errors = stats.total_errors + 1
-            goto continue
-        end
-
-        zip_data = zip_data_or_err
-
-        if not zip_data then
-            log:error("Failed to create ZIP: %s", tostring(zip_err))
-            stats.zip_errors = stats.zip_errors + 1
-            stats.total_errors = stats.total_errors + 1
-            goto continue
-        end
-
-        local elapsed = os.clock() - start_time
-        print_stats(current_archive_num, #images, elapsed, #zip_data)
-        stats.total_archives = stats.total_archives + 1
-
-        -- save localy if enabled
-        if config.archive.save_local then
-            local timestamp = os.date("%Y%m%d_%H%M%S")
-            local filename = string.format("cats_%s_%04d.zip", timestamp, current_archive_num)
-            local filepath = config.archive.output_dir .. "/" .. filename
-
-            local file, file_err = io.open(filepath, "wb")
-            if file then
-                file:write(zip_data)
-                file:close()
-                log:info("Archive saved locally: %s", filename)
-            else
-                log:warn("Failed to save archive locally: %s", tostring(file_err))
+            -- Periodic console stats dump
+            if stats.total_archives % 10 == 0 then
+                print_final_stats()
             end
         end
+    })
 
-        -- send zipped cats back
-        if config.upload.enabled then
-            log:debug("Uploading archive to server...")
+    -- Start fetcher (workers run continuously)
+    fetcher:start(queue)
+    log:info("Started %d workers (continuous fetching)", num_workers)
 
-            local upload_pcall_ok, upload_ok, upload_err = pcall(function()
-                return http_client:upload_archive(zip_data)
-            end)
+    -- Monitor for shutdown in separate coroutine
+    copas.addthread(function()
+        while not shutdown_requested do
+            copas.pause(0.5)
+        end
+        log:info("Shutdown requested, stopping pipeline...")
+        consumer:stop()
+        queue:close()
+        fetcher:stop()
 
-            if not upload_pcall_ok then
-                log:error("Upload crashed: %s", tostring(upload_ok))
-                stats.upload_errors = stats.upload_errors + 1
-                stats.total_errors = stats.total_errors + 1
-            elseif upload_ok then
-                log:info("Archive #%d uploaded successfully", current_archive_num)
-            else
-                log:warn("Failed to upload archive: %s", tostring(upload_err))
-                stats.upload_errors = stats.upload_errors + 1
-                stats.total_errors = stats.total_errors + 1
-            end
+        -- Wait for components to finish, with timeout
+        local timeout = 5
+        local start = os.time()
+        while (consumer:is_running() or fetcher:is_running()) and (os.time() - start < timeout) do
+            copas.pause(0.2)
         end
 
-        -- info
-        if stats.total_archives % 10 == 0 then
-            print_final_stats()
-        end
+        -- Force exit copas loop
+        log:info("Exiting event loop...")
+    end)
 
-        -- take a break if needed
-        if config.service.cycle_delay > 0 and not shutdown_requested then
-            log:debug("Waiting %d seconds before next cycle...", config.service.cycle_delay)
-            copas.sleep(config.service.cycle_delay)
-        end
+    -- Run consumer (blocks until stopped)
+    copas.addthread(function()
+        consumer:run()
+    end)
 
-        ::continue::
-    end
+    -- Run event loop
+    copas.loop()
 
-    log:info("Service stopped. Total archives created: %d", stats.total_archives)
+    -- Sync stats from components
+    local consumer_stats = consumer:get_stats()
+    local fetcher_stats = fetcher:get_stats()
+
+    stats.total_archives = consumer_stats.total_archives
+    stats.total_cats = consumer_stats.total_cats
+    stats.upload_errors = consumer_stats.upload_errors or 0
+    stats.zip_errors = consumer_stats.write_errors or 0
+    stats.fetch_errors = fetcher_stats.errors or 0
+    stats.total_errors = stats.fetch_errors + stats.zip_errors + stats.upload_errors
+
+    log:info("Streaming stopped:")
+    log:info("  Archives created: %d", consumer_stats.total_archives)
+    log:info("  Total cats: %d", consumer_stats.total_cats)
+    log:info("  Fetched: %d, Duplicates: %d, Errors: %d",
+             fetcher_stats.fetched, fetcher_stats.duplicates, fetcher_stats.errors)
+
     print_final_stats()
     save_stats_to_file()
 end
@@ -317,15 +264,19 @@ local function handle_shutdown(signum)
 
     if shutdown_requested then
         log:warn("Force shutdown requested (%s), exiting immediately", signame)
-        print(COLORS.RED .. "\nForce exit! Saving stats..." .. COLORS.RESET)
+        print("\nForce exit! Saving stats...")
         print_final_stats()
         save_stats_to_file()
         os.exit(1)
     end
 
     shutdown_requested = true
-    print("\n" .. COLORS.YELLOW .. string.format("Signal %s received, finishing current archive...", signame) .. COLORS.RESET)
+    print("\n" .. COLORS.YELLOW .. string.format("Signal %s received, graceful shutdown...", signame) .. COLORS.RESET)
     log:info("Graceful shutdown initiated (signal: %s)", signame)
+
+    -- Save stats immediately in case we don't get to clean exit
+    print_final_stats()
+    save_stats_to_file()
 end
 
 --- Entry
@@ -342,9 +293,11 @@ local function main()
         log:warn("posix.signal not available, Ctrl+C will terminate immediately")
     end
 
+    log:info("Using streaming pipeline mode")
+
     -- run the cats ^^
     copas.addthread(function()
-        local ok, err = pcall(run_service)
+        local ok, err = pcall(run_service_streaming)
         if not ok then
             log:error("Service error: %s", tostring(err))
             print_final_stats()

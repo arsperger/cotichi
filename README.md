@@ -10,11 +10,54 @@ docker-compose up --build
 
 ## Features
 
+- Continuous streaming pipeline (long-running service)
 - Async HTTP with Copas
-- Parallel fetching (12 workers)
-- MD5 deduplication
-- ZIP archives
+- Parallel fetching (configurable workers)
+- Per-archive MD5 deduplication
+- Incremental ZIP archives
 - Graceful shutdown (SIGINT/SIGTERM)
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Producers["👷 StreamingFetcher"]
+        W1[Worker 1]
+        W2[Worker 2]
+        WN[Worker N]
+    end
+    
+    subgraph Dedup["🔍 Deduplicator"]
+        D[MD5 Hash Table]
+    end
+    
+    subgraph Buffer["📦 ImageQueue"]
+        Q[Bounded Queue<br/>with Backpressure]
+    end
+    
+    subgraph Consumer["📝 BatchingConsumer"]
+        BC[Batching Logic]
+        ZIP[StreamingArchive]
+    end
+    
+    subgraph Server["🌐 Cat Server"]
+        API["/cat endpoint"]
+    end
+    
+    W1 --> D
+    W2 --> D
+    WN --> D
+    D --> Q
+    Q --> BC
+    BC --> ZIP
+    ZIP -->|upload| API
+```
+
+**How it works:**
+1. **Workers** fetch cats from API in parallel
+2. **Deduplicator** filters duplicates by MD5 hash (resets after each archive)
+3. **ImageQueue** buffers images with backpressure
+4. **BatchingConsumer** writes to ZIP, uploads when 12 cats collected, repeats forever
 
 ## Configuration
 
@@ -28,15 +71,14 @@ All settings can be configured via environment variables:
 | `CAT_API_DEBUG_URL` | `http://algisothal.ru:8890` | Debug API URL (no delay) |
 | `USE_DEBUG_API` | `false` | Use debug endpoint (`true`/`1` to enable) |
 | `UPLOAD_ENABLED` | `true` | Upload archive to server (`false` to disable) |
-| `UPLOAD_ENDPOINT` | `/cat` | Upload endpoint path |
 
 ### Async/Concurrency Settings
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NUM_WORKERS` | `12` | Number of parallel fetch workers |
+| `NUM_WORKERS` | `24` | Number of parallel fetch workers |
+| `QUEUE_SIZE` | `25` | Image queue buffer size |
 | `TIMEOUT` | `20` | HTTP request timeout (seconds) |
-| `FETCH_TIMEOUT` | `60` | Total fetch batch timeout (seconds) |
 | `RETRY_COUNT` | `3` | HTTP retry attempts |
 | `RETRY_DELAY` | `1` | Initial retry delay (seconds, exponential backoff) |
 
@@ -45,7 +87,6 @@ All settings can be configured via environment variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TARGET_COUNT` | `12` | Number of cats per archive |
-| `FILENAME_PATTERN` | `cat_%02d.jpg` | Filename pattern in ZIP |
 | `OUTPUT_DIR` | `/app/output` | Output directory for local saves |
 | `SAVE_LOCAL` | `false` | Save archive locally (`true`/`1` to enable) |
 
