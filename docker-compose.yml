@@ -9,7 +9,7 @@ services:
     environment:
       - CAT_API_URL=http://algisothal.ru:8889
       - CAT_API_DEBUG_URL=http://algisothal.ru:8890
-      - NUM_WORKERS=12
+      - NUM_WORKERS=24
       - TARGET_COUNT=12
       - QUEUE_SIZE=20
       - LOG_LEVEL=DEBUG

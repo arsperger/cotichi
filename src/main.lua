@@ -138,7 +138,7 @@ Performance:
     end
 end
 
-local MIN_CATS_FOR_ARCHIVE = 1
+-- local MIN_CATS_FOR_ARCHIVE = 1
 
 --- Continuous streaming pipeline (workers + batching consumer)
 local function run_service_streaming()
@@ -166,16 +166,14 @@ local function run_service_streaming()
 
     print("\n" .. COLORS.YELLOW .. "Starting continuous streaming... Press Ctrl+C to stop" .. COLORS.RESET .. "\n")
 
-    -- Create shared queue
     local queue = ImageQueue.new(config.streaming.queue_size)
 
-    -- Create fetcher (workers)
     local fetcher = StreamingFetcher.new(http_client, {
         num_workers = num_workers,
         logger = log
     })
 
-    -- Create batching consumer (handles archive creation, upload, cycling)
+    -- batching consumer (handles archive creation, upload, cycling)
     local consumer = BatchingConsumer.new(queue, http_client, {
         batch_size = target_count,
         output_dir = config.archive.output_dir,
@@ -183,23 +181,21 @@ local function run_service_streaming()
         upload_enabled = config.upload.enabled,
         logger = log,
         on_batch_complete = function(archive_num, batch_stats)
-            -- Update global stats
+
             stats.total_archives = stats.total_archives + 1
             stats.total_cats = stats.total_cats + batch_stats.cats
 
-            -- Reset deduplicator for next archive (allow duplicates between archives)
+            --allow duplicates between archives
             fetcher:reset_deduplicator()
 
-            -- Print progress
             print_stats(archive_num, batch_stats.cats, 0, batch_stats.bytes)
-
-            -- Save stats after every archive (in case of crash/kill)
             save_stats_to_file()
 
-            -- Periodic console stats dump
+            --[[
             if stats.total_archives % 10 == 0 then
                 print_final_stats()
             end
+            ]]
         end
     })
 
@@ -224,37 +220,32 @@ local function run_service_streaming()
             copas.pause(0.2)
         end
 
-        -- Force exit copas loop
-        log:info("Exiting event loop...")
+        log:info("All components stopped")
     end)
 
-    -- Run consumer (blocks until stopped)
     copas.addthread(function()
         consumer:run()
+
+        local consumer_stats = consumer:get_stats()
+        local fetcher_stats = fetcher:get_stats()
+
+        stats.total_archives = consumer_stats.total_archives
+        stats.total_cats = consumer_stats.total_cats
+        stats.upload_errors = consumer_stats.upload_errors or 0
+        stats.zip_errors = consumer_stats.write_errors or 0
+        stats.fetch_errors = fetcher_stats.errors or 0
+        stats.total_errors = stats.fetch_errors + stats.zip_errors + stats.upload_errors
+
+        log:info("Streaming stopped:")
+        log:info("  Archives created: %d", consumer_stats.total_archives)
+        log:info("  Total cats: %d", consumer_stats.total_cats)
+        log:info("  Fetched: %d, Duplicates: %d, Errors: %d",
+                 fetcher_stats.fetched, fetcher_stats.duplicates, fetcher_stats.errors)
+
+        print_final_stats()
+        save_stats_to_file()
     end)
 
-    -- Run event loop
-    copas.loop()
-
-    -- Sync stats from components
-    local consumer_stats = consumer:get_stats()
-    local fetcher_stats = fetcher:get_stats()
-
-    stats.total_archives = consumer_stats.total_archives
-    stats.total_cats = consumer_stats.total_cats
-    stats.upload_errors = consumer_stats.upload_errors or 0
-    stats.zip_errors = consumer_stats.write_errors or 0
-    stats.fetch_errors = fetcher_stats.errors or 0
-    stats.total_errors = stats.fetch_errors + stats.zip_errors + stats.upload_errors
-
-    log:info("Streaming stopped:")
-    log:info("  Archives created: %d", consumer_stats.total_archives)
-    log:info("  Total cats: %d", consumer_stats.total_cats)
-    log:info("  Fetched: %d, Duplicates: %d, Errors: %d",
-             fetcher_stats.fetched, fetcher_stats.duplicates, fetcher_stats.errors)
-
-    print_final_stats()
-    save_stats_to_file()
 end
 
 --- helpers
